@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from './useAuth';
-import { createCollection } from '@/utils/mongoHelpers';
+import { useAuth } from '@/hooks/useAuth';
 import { createCollection } from '@/utils/mongoHelpers';
 
 interface Expense {
