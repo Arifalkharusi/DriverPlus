@@ -107,15 +107,32 @@ export default function LoginScreen() {
           </Text>
         </TouchableOpacity>
 
+        <View className="flex-row mb-6">
+          <View className="flex-1 mr-2">
+            <Link href="/auth/register" asChild>
+              <TouchableOpacity className={`${isDark ? 'bg-slate-700 border-slate-600' : 'bg-gray-100 border-gray-300'} border rounded-xl py-4 items-center`}>
+                <Text className={`text-base font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                  Create Account
+                </Text>
+              </TouchableOpacity>
+            </Link>
+          </View>
+          <View className="flex-1 ml-2">
+            <TouchableOpacity className={`${isDark ? 'bg-slate-700 border-slate-600' : 'bg-gray-100 border-gray-300'} border rounded-xl py-4 items-center`}>
+              <Text className={`text-base font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                Demo Mode
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         <View className="flex-row justify-center items-center">
           <Text className={`text-base ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
-            Don't have an account? 
+            Need help? 
           </Text>
-          <Link href="/auth/register" asChild>
-            <TouchableOpacity>
-              <Text className="text-base text-primary-600 font-semibold ml-1">Sign Up</Text>
-            </TouchableOpacity>
-          </Link>
+          <TouchableOpacity>
+            <Text className="text-base text-primary-600 font-semibold ml-1">Contact Support</Text>
+          </TouchableOpacity>
         </View>
       </View>
     </KeyboardAvoidingView>
