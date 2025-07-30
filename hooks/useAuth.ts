@@ -1,220 +1,178 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from './useAuth';
-import { createCollection } from '@/utils/mongoHelpers';
+import { supabase } from '@/utils/supabase';
+import { storeUserToken, getUserToken, removeUserToken } from '@/utils/storage';
 
-interface Expense {
+interface User {
   id: string;
-  category: string;
-  amount: number;
-  description: string;
-  date: string;
-  receipt_url?: string;
+  email: string;
   created_at: string;
-  // Additional flexible fields for MongoDB-style storage
-  location?: {
-    lat: number;
-    lng: number;
-    address?: string;
-  };
-  tags?: string[];
-  mileage?: number;
-  vendor?: string;
-  payment_method?: string;
-  tax_deductible?: boolean;
-  notes?: string;
 }
 
-export function useExpenses(useDocumentStorage = false) {
-  const { user } = useAuth();
-  const [expenses, setExpenses] = useState<Expense[]>([]);
+interface Profile {
+  id: string;
+  user_id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone?: string;
+  city?: string;
+  created_at: string;
+}
+
+export function useAuth() {
+  const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (user) {
-      loadExpenses();
-    }
-  }, [user]);
+    // Check for existing session
+    checkSession();
 
-  const loadExpenses = async () => {
-    try {
-      if (!user) return;
-
-      if (useDocumentStorage) {
-        // MongoDB-style document storage
-        const expensesCollection = createCollection(user.id, 'expenses');
-        const { documents, error } = await expensesCollection.find({}, { 
-          sort: { date: -1 } 
-        });
-        
-        if (error) throw error;
-        
-        // Convert documents to expenses format
-        const convertedExpenses = documents.map(doc => ({
-          id: doc._id,
-          user_id: user.id,
-          category: doc.category,
-          amount: doc.amount,
-          description: doc.description,
-          date: doc.date,
-          receipt_url: doc.receipt_url,
-          created_at: doc.created_at || new Date().toISOString(),
-        }));
-        
-        setExpenses(convertedExpenses);
-      } else {
-        // Traditional SQL approach
-        const { data, error } = await supabase
-          .from('expenses')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('date', { ascending: false });
-      }
-      if (error) throw error;
-      
-      // Convert documents to expenses format
-      const convertedExpenses = documents.map(doc => ({
-        id: doc._id,
-        category: doc.category,
-        amount: doc.amount,
-        description: doc.description,
-        date: doc.date,
-        receipt_url: doc.receipt_url,
-        created_at: doc.created_at || new Date().toISOString(),
-        location: doc.location,
-        tags: doc.tags,
-        mileage: doc.mileage,
-        vendor: doc.vendor,
-        payment_method: doc.payment_method,
-        tax_deductible: doc.tax_deductible,
-      }
-      )
-      )
-      if (useDocumentStorage) {
-        // MongoDB-style document storage
-      }
-      const { documents, error } = await expensesCollection.find({}, { 
-        sort: { date: -1 } 
-      });
-      
-      if (error) throw error;
-      
-      const expensesCollection = createCollection(user.id, 'expenses');
-      const { insertedId, error } = await expensesCollection.insertOne({
-        ...expenseData,
-        created_at: new Date().toISOString(),
-        // Add flexible metadata
-        metadata: {
-          source: 'manual_entry',
-          location: null, // Could store GPS coordinates
-          tags: [], // Custom tags
-          tax_deductible: true, // Default for business expenses
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (session?.user) {
+          setUser(session.user as User);
+          await loadProfile(session.user.id);
+        } else {
+          setUser(null);
+          setProfile(null);
         }
+        setLoading(false);
+      }
+    );
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const checkSession = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        setUser(session.user as User);
+        await loadProfile(session.user.id);
+      }
+    } catch (error) {
+      console.error('Error checking session:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadProfile = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        throw error;
+      }
+
+      setProfile(data);
+    } catch (error) {
+      console.error('Error loading profile:', error);
+    }
+  };
+
+  const signIn = async (email: string, password: string) => {
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
-      
+
       if (error) throw error;
-      
-      const newExpense = {
-        id: insertedId,
-        ...expenseData,
-        created_at: new Date().toISOString(),
-      };
-      
-      setExpenses(prev => [newExpense, ...prev]);
-      return { data: newExpense, error: null };
+
+      if (data.user) {
+        await storeUserToken(data.session?.access_token || '');
+      }
+
+      return { data, error: null };
     } catch (error) {
       return { data: null, error };
     }
   };
 
-  const getTotalExpenses = (period: 'today' | 'week' | 'month' = 'month') => {
-    let filteredExpenses: Expense[];
-    
-    switch (period) {
-      case 'today':
-        const today = new Date().toISOString().split('T')[0];
-        filteredExpenses = expenses.filter(e => e.date === today);
-        break;
-      case 'week':
-        const weekAgo = new Date();
-        weekAgo.setDate(weekAgo.getDate() - 7);
-        filteredExpenses = expenses.filter(e => new Date(e.date) >= weekAgo);
-        break;
-      default:
-        const monthAgo = new Date();
-        monthAgo.setMonth(monthAgo.getMonth() - 1);
-        filteredExpenses = expenses.filter(e => new Date(e.date) >= monthAgo);
+  const signUp = async (email: string, password: string, profileData: any) => {
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+      });
+
+      if (error) throw error;
+
+      if (data.user) {
+        // Create profile
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert({
+            user_id: data.user.id,
+            email,
+            first_name: profileData.firstName,
+            last_name: profileData.lastName,
+            phone: profileData.phone,
+            city: profileData.city,
+          });
+
+        if (profileError) {
+          console.error('Error creating profile:', profileError);
+        }
+
+        await storeUserToken(data.session?.access_token || '');
+      }
+
+      return { data, error: null };
+    } catch (error) {
+      return { data: null, error };
     }
-    
-    return filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0);
   };
 
-  // MongoDB-style query methods
-  const getExpensesByCategory = async (category: string) => {
-    if (!user) return [];
-    
-    const expensesCollection = createCollection(user.id, 'expenses');
-    const { documents } = await expensesCollection.find({ category });
-    return documents;
+  const signOut = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+
+      await removeUserToken();
+      setUser(null);
+      setProfile(null);
+
+      return { error: null };
+    } catch (error) {
+      return { error };
+    }
   };
 
-  const getExpensesAnalytics = async () => {
-    if (!user) return null;
-    
-    const expensesCollection = createCollection(user.id, 'expenses');
-    const { result } = await expensesCollection.aggregate([
-      { $group: { _id: '$category', totalAmount: { $sum: '$amount' }, count: { $sum: 1 } } },
-      { $sort: { totalAmount: -1 } }
-    ]);
-    return result;
-  };
+  const updateProfile = async (updates: Partial<Profile>) => {
+    try {
+      if (!user) throw new Error('No user logged in');
 
-  const getTaxDeductibleExpenses = async () => {
-    if (!user) return [];
-    
-    const expensesCollection = createCollection(user.id, 'expenses');
-    const { documents } = await expensesCollection.find({ tax_deductible: true });
-    return documents;
-  };
+      const { data, error } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('user_id', user.id)
+        .select()
+        .single();
 
-  // MongoDB-style query methods
-  const getExpensesByCategory = async (category: string) => {
-    if (!user) return [];
-    
-    const expensesCollection = createCollection(user.id, 'expenses');
-    const { documents } = await expensesCollection.find({ category });
-    return documents;
-  };
+      if (error) throw error;
 
-  const getExpensesAnalytics = async () => {
-    if (!user) return null;
-    
-    const expensesCollection = createCollection(user.id, 'expenses');
-    const { result } = await expensesCollection.aggregate([
-      { $group: { _id: '$category', totalAmount: { $sum: '$amount' }, count: { $sum: 1 } } },
-      { $sort: { totalAmount: -1 } }
-    ]);
-    return result;
-  };
-
-  const getTaxDeductibleExpenses = async () => {
-    if (!user) return [];
-    
-    const expensesCollection = createCollection(user.id, 'expenses');
-    const { documents } = await expensesCollection.find({ tax_deductible: true });
-    return documents;
+      setProfile(data);
+      return { data, error: null };
+    } catch (error) {
+      return { data: null, error };
+    }
   };
 
   return {
-    expenses,
+    user,
+    profile,
     loading,
-    addExpense,
-    getTotalExpenses,
-    getExpensesByCategory,
-    getExpensesAnalytics,
-    getTaxDeductibleExpenses,
-    getExpensesByCategory,
-    getExpensesAnalytics,
-    getTaxDeductibleExpenses,
-    refreshExpenses: loadExpenses,
+    signIn,
+    signUp,
+    signOut,
+    updateProfile,
   };
 }
