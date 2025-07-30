@@ -1,13 +1,6 @@
 import { Tabs } from 'expo-router';
 import { useTheme } from '@/hooks/useTheme';
-import {
-  Home,
-  TrendingUp,
-  Target,
-  FileText,
-  Plane,
-  User,
-} from 'lucide-react-native';
+import { Chrome as Home, TrendingUp, Target, FileText, Plane, User } from 'lucide-react-native';
 
 export default function TabsLayout() {
   const { isDark } = useTheme();
