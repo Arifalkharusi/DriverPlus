@@ -1,149 +1,143 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/utils/supabase';
-import type { User, Session } from '@supabase/supabase-js';
+import { useAuth } from './useAuth';
+import { createCollection } from '@/utils/mongoHelpers';
 import type { Database } from '@/utils/supabase';
 
-type Profile = Database['public']['Tables']['profiles']['Row'];
+type Expense = Database['public']['Tables']['expenses']['Row'];
+type ExpenseInsert = Database['public']['Tables']['expenses']['Insert'];
 
-export function useAuth() {
-  const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
+export function useExpenses(useDocumentStorage = false) {
+  const { user } = useAuth();
+  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        loadProfile(session.user.id);
-      }
-      setLoading(false);
-    });
+    if (user) {
+      loadExpenses();
+    }
+  }, [user]);
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
+  const loadExpenses = async () => {
+    try {
+      if (!user) return;
+
+      if (useDocumentStorage) {
+        // MongoDB-style document storage
+        const expensesCollection = createCollection(user.id, 'expenses');
+        const { documents, error } = await expensesCollection.find({}, { 
+          sort: { date: -1 } 
+        });
         
-        if (session?.user) {
-          await loadProfile(session.user.id);
-        } else {
-          setProfile(null);
-        }
-        setLoading(false);
+        if (error) throw error;
+        
+        // Convert documents to expenses format
+        const convertedExpenses = documents.map(doc => ({
+          id: doc._id,
+          user_id: user.id,
+          category: doc.category,
+          amount: doc.amount,
+          description: doc.description,
+          date: doc.date,
+          receipt_url: doc.receipt_url,
+          created_at: doc.created_at || new Date().toISOString(),
+        }));
+        
+        setExpenses(convertedExpenses);
+      } else {
+        // Traditional SQL approach
+        const { data, error } = await supabase
+          .from('expenses')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('date', { ascending: false });
+
+        if (error) throw error;
+
+        setExpenses(data || []);
       }
-    );
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const loadProfile = async (userId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
-      if (error && error.code !== 'PGRST116') {
-        throw error;
-      }
-
-      setProfile(data);
     } catch (error) {
-      console.error('Error loading profile:', error);
+      console.error('Error loading expenses:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const signUp = async (email: string, password: string, userData: {
-    firstName: string;
-    lastName: string;
-    city: string;
-    phone?: string;
-  }) => {
-    try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-      });
-
-      if (error) throw error;
-
-      if (data.user) {
-        // Create profile
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .insert({
-            id: data.user.id,
-            email,
-            first_name: userData.firstName,
-            last_name: userData.lastName,
-            city: userData.city,
-            phone: userData.phone,
-          });
-
-        if (profileError) throw profileError;
-      }
-
-      return { data, error: null };
-    } catch (error) {
-      return { data: null, error };
-    }
-  };
-
-  const signIn = async (email: string, password: string) => {
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      return { data, error };
-    } catch (error) {
-      return { data: null, error };
-    }
-  };
-
-  const signOut = async () => {
-    try {
-      const { error } = await supabase.auth.signOut();
-      return { error };
-    } catch (error) {
-      return { error };
-    }
-  };
-
-  const updateProfile = async (updates: Partial<Profile>) => {
+  const addExpense = async (expense: Omit<ExpenseInsert, 'user_id'>) => {
     try {
       if (!user) throw new Error('No user logged in');
 
-      const { data, error } = await supabase
-        .from('profiles')
-        .update({ ...updates, updated_at: new Date().toISOString() })
-        .eq('id', user.id)
-        .select()
-        .single();
+      if (useDocumentStorage) {
+        // MongoDB-style document storage
+        const expensesCollection = createCollection(user.id, 'expenses');
+        const { data, error } = await expensesCollection.insertOne({
+          ...expense,
+          created_at: new Date().toISOString(),
+          // Add flexible fields for receipts, location, etc.
+          metadata: {
+            source: 'manual_entry',
+            location: null, // Could store GPS coordinates
+            tags: [], // Custom tags
+          }
+        });
+        
+        if (error) throw error;
+        
+        // Convert back to expense format for state
+        const newExpense = {
+          id: data.insertedId,
+          user_id: user.id,
+          ...expense,
+          created_at: new Date().toISOString(),
+        };
+        
+        setExpenses(prev => [newExpense, ...prev]);
+        return { data: newExpense, error: null };
+      } else {
+        // Traditional SQL approach
+        const { data, error } = await supabase
+          .from('expenses')
+          .insert({ ...expense, user_id: user.id })
+          .select()
+          .single();
 
-      if (error) throw error;
+        if (error) throw error;
 
-      setProfile(data);
-      return { data, error: null };
+        setExpenses(prev => [data, ...prev]);
+        return { data: null, error };
+      }
     } catch (error) {
       return { data: null, error };
     }
   };
 
+  const getTotalExpenses = (period: 'today' | 'week' | 'month' = 'month') => {
+    let filteredExpenses: Expense[];
+    
+    switch (period) {
+      case 'today':
+        const today = new Date().toISOString().split('T')[0];
+        filteredExpenses = expenses.filter(e => e.date === today);
+        break;
+      case 'week':
+        const weekAgo = new Date();
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        filteredExpenses = expenses.filter(e => new Date(e.date) >= weekAgo);
+        break;
+      default:
+        const monthAgo = new Date();
+        monthAgo.setMonth(monthAgo.getMonth() - 1);
+        filteredExpenses = expenses.filter(e => new Date(e.date) >= monthAgo);
+    }
+    
+    return filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+  };
+
   return {
-    user,
-    profile,
-    session,
+    expenses,
     loading,
-    signUp,
-    signIn,
-    signOut,
-    updateProfile,
+    addExpense,
+    getTotalExpenses,
+    refreshExpenses: loadExpenses,
   };
 }
