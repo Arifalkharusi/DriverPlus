@@ -69,6 +69,7 @@ export function useExpenses(useDocumentStorage = false) {
           .select('*')
           .eq('user_id', user.id)
           .order('date', { ascending: false });
+      }
       if (error) throw error;
       
       // Convert documents to expenses format
@@ -86,8 +87,12 @@ export function useExpenses(useDocumentStorage = false) {
         vendor: doc.vendor,
         payment_method: doc.payment_method,
         tax_deductible: doc.tax_deductible,
+      }
+      )
+      )
       if (useDocumentStorage) {
         // MongoDB-style document storage
+      }
       const { documents, error } = await expensesCollection.find({}, { 
         sort: { date: -1 } 
       });
@@ -108,6 +113,9 @@ export function useExpenses(useDocumentStorage = false) {
         mileage: doc.mileage,
         vendor: doc.vendor,
         payment_method: doc.payment_method,
+      }
+      )
+      )
       const expensesCollection = createCollection(user.id, 'expenses');
       const { insertedId, error } = await expensesCollection.insertOne({
         ...expenseData,

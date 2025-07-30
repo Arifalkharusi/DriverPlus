@@ -67,9 +67,13 @@ export function useExpenses(useDocumentStorage = false) {
         const { data, error } = await supabase
           .from('expenses')
           .select('*')
+      }
       if (useDocumentStorage) {
         // MongoDB-style document storage
         id: doc._id,
+      }
+    }
+  }
   const onRefresh = async () => {
     setRefreshing(true);
     await refreshTargets();
@@ -172,3 +176,8 @@ export function useExpenses(useDocumentStorage = false) {
               color="#8b5cf6"
               fullWidth
             />
+
+      )
+      }
+  )
+}
