@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/utils/supabase';
 import { useAuth } from './useAuth';
+import { createCollection } from '@/utils/mongoHelpers';
 import type { Database } from '@/utils/supabase';
 
 type Expense = Database['public']['Tables']['expenses']['Row'];
 type ExpenseInsert = Database['public']['Tables']['expenses']['Insert'];
 
-export function useExpenses() {
+export function useExpenses(useDocumentStorage = false) {
   const { user } = useAuth();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
@@ -21,15 +22,40 @@ export function useExpenses() {
     try {
       if (!user) return;
 
-      const { data, error } = await supabase
-        .from('expenses')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('date', { ascending: false });
+      if (useDocumentStorage) {
+        // MongoDB-style document storage
+        const expensesCollection = createCollection(user.id, 'expenses');
+        const { documents, error } = await expensesCollection.find({}, { 
+          sort: { date: -1 } 
+        });
+        
+        if (error) throw error;
+        
+        // Convert documents to expenses format
+        const convertedExpenses = documents.map(doc => ({
+          id: doc._id,
+          user_id: user.id,
+          category: doc.category,
+          amount: doc.amount,
+          description: doc.description,
+          date: doc.date,
+          receipt_url: doc.receipt_url,
+          created_at: doc.created_at || new Date().toISOString(),
+        }));
+        
+        setExpenses(convertedExpenses);
+      } else {
+        // Traditional SQL approach
+        const { data, error } = await supabase
+          .from('expenses')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('date', { ascending: false });
 
-      if (error) throw error;
+        if (error) throw error;
 
-      setExpenses(data || []);
+        setExpenses(data || []);
+      }
     } catch (error) {
       console.error('Error loading expenses:', error);
     } finally {
@@ -41,16 +67,45 @@ export function useExpenses() {
     try {
       if (!user) throw new Error('No user logged in');
 
-      const { data, error } = await supabase
-        .from('expenses')
-        .insert({ ...expense, user_id: user.id })
-        .select()
-        .single();
+      if (useDocumentStorage) {
+        // MongoDB-style document storage
+        const expensesCollection = createCollection(user.id, 'expenses');
+        const { data, error } = await expensesCollection.insertOne({
+          ...expense,
+          created_at: new Date().toISOString(),
+          // Add flexible fields for receipts, location, etc.
+          metadata: {
+            source: 'manual_entry',
+            location: null, // Could store GPS coordinates
+            tags: [], // Custom tags
+          }
+        });
+        
+        if (error) throw error;
+        
+        // Convert back to expense format for state
+        const newExpense = {
+          id: data.insertedId,
+          user_id: user.id,
+          ...expense,
+          created_at: new Date().toISOString(),
+        };
+        
+        setExpenses(prev => [newExpense, ...prev]);
+        return { data: newExpense, error: null };
+      } else {
+        // Traditional SQL approach
+        const { data, error } = await supabase
+          .from('expenses')
+          .insert({ ...expense, user_id: user.id })
+          .select()
+          .single();
 
-      if (error) throw error;
+        if (error) throw error;
 
-      setExpenses(prev => [data, ...prev]);
-      return { data, error: null };
+        setExpenses(prev => [data, ...prev]);
+        return { data: null, error };
+      }
     } catch (error) {
       return { data: null, error };
     }

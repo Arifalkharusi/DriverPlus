@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/utils/supabase';
 import { useAuth } from './useAuth';
+import { createCollection } from '@/utils/mongoHelpers';
 import type { Database } from '@/utils/supabase';
 
 type Earning = Database['public']['Tables']['earnings']['Row'];
 type EarningInsert = Database['public']['Tables']['earnings']['Insert'];
 
-export function useEarnings() {
+export function useEarnings(useDocumentStorage = false) {
   const { user } = useAuth();
   const [earnings, setEarnings] = useState<Earning[]>([]);
   const [loading, setLoading] = useState(true);
@@ -21,15 +22,42 @@ export function useEarnings() {
     try {
       if (!user) return;
 
-      const { data, error } = await supabase
-        .from('earnings')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('date', { ascending: false });
+      if (useDocumentStorage) {
+        // MongoDB-style document storage
+        const earningsCollection = createCollection(user.id, 'earnings');
+        const { documents, error } = await earningsCollection.find({}, { 
+          sort: { date: -1 } 
+        });
+        
+        if (error) throw error;
+        
+        // Convert documents to earnings format
+        const convertedEarnings = documents.map(doc => ({
+          id: doc._id,
+          user_id: user.id,
+          platform: doc.platform,
+          date: doc.date,
+          gross_amount: doc.gross_amount,
+          platform_fees: doc.platform_fees,
+          net_amount: doc.net_amount,
+          trips_count: doc.trips_count,
+          hours_worked: doc.hours_worked,
+          created_at: doc.created_at || new Date().toISOString(),
+        }));
+        
+        setEarnings(convertedEarnings);
+      } else {
+        // Traditional SQL approach
+        const { data, error } = await supabase
+          .from('earnings')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('date', { ascending: false });
 
-      if (error) throw error;
+        if (error) throw error;
 
-      setEarnings(data || []);
+        setEarnings(data || []);
+      }
     } catch (error) {
       console.error('Error loading earnings:', error);
     } finally {
@@ -41,16 +69,44 @@ export function useEarnings() {
     try {
       if (!user) throw new Error('No user logged in');
 
-      const { data, error } = await supabase
-        .from('earnings')
-        .insert({ ...earning, user_id: user.id })
-        .select()
-        .single();
+      if (useDocumentStorage) {
+        // MongoDB-style document storage
+        const earningsCollection = createCollection(user.id, 'earnings');
+        const { data, error } = await earningsCollection.insertOne({
+          ...earning,
+          created_at: new Date().toISOString(),
+          // Add any additional flexible fields
+          metadata: {
+            source: 'manual_entry',
+            app_version: '1.0.0',
+          }
+        });
+        
+        if (error) throw error;
+        
+        // Convert back to earnings format for state
+        const newEarning = {
+          id: data.insertedId,
+          user_id: user.id,
+          ...earning,
+          created_at: new Date().toISOString(),
+        };
+        
+        setEarnings(prev => [newEarning, ...prev]);
+        return { data: newEarning, error: null };
+      } else {
+        // Traditional SQL approach
+        const { data, error } = await supabase
+          .from('earnings')
+          .insert({ ...earning, user_id: user.id })
+          .select()
+          .single();
 
-      if (error) throw error;
+        if (error) throw error;
 
-      setEarnings(prev => [data, ...prev]);
-      return { data, error: null };
+        setEarnings(prev => [data, ...prev]);
+        return { data, error: null };
+      }
     } catch (error) {
       return { data: null, error };
     }
