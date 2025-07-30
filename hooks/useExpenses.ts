@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from './useAuth';
 import { createCollection } from '@/utils/mongoHelpers';
+import { createCollection } from '@/utils/mongoHelpers';
 
 interface Expense {
   id: string;
@@ -24,7 +25,7 @@ interface Expense {
   notes?: string;
 }
 
-export function useExpenses() {
+export function useExpenses(useDocumentStorage = false) {
   const { user } = useAuth();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,7 +40,54 @@ export function useExpenses() {
     try {
       if (!user) return;
 
-      const expensesCollection = createCollection(user.id, 'expenses');
+      if (useDocumentStorage) {
+        // MongoDB-style document storage
+        const expensesCollection = createCollection(user.id, 'expenses');
+        const { documents, error } = await expensesCollection.find({}, { 
+          sort: { date: -1 } 
+        });
+        
+        if (error) throw error;
+        
+        // Convert documents to expenses format
+        const convertedExpenses = documents.map(doc => ({
+          id: doc._id,
+          user_id: user.id,
+          category: doc.category,
+          amount: doc.amount,
+          description: doc.description,
+          date: doc.date,
+          receipt_url: doc.receipt_url,
+          created_at: doc.created_at || new Date().toISOString(),
+        }));
+        
+        setExpenses(convertedExpenses);
+      } else {
+        // Traditional SQL approach
+        const { data, error } = await supabase
+          .from('expenses')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('date', { ascending: false });
+      if (error) throw error;
+      
+      // Convert documents to expenses format
+      const convertedExpenses = documents.map(doc => ({
+        id: doc._id,
+        category: doc.category,
+        amount: doc.amount,
+        description: doc.description,
+        date: doc.date,
+        receipt_url: doc.receipt_url,
+        created_at: doc.created_at || new Date().toISOString(),
+        location: doc.location,
+        tags: doc.tags,
+        mileage: doc.mileage,
+        vendor: doc.vendor,
+        payment_method: doc.payment_method,
+        tax_deductible: doc.tax_deductible,
+      if (useDocumentStorage) {
+        // MongoDB-style document storage
       const { documents, error } = await expensesCollection.find({}, { 
         sort: { date: -1 } 
       });
@@ -60,22 +108,6 @@ export function useExpenses() {
         mileage: doc.mileage,
         vendor: doc.vendor,
         payment_method: doc.payment_method,
-        tax_deductible: doc.tax_deductible,
-        notes: doc.notes,
-      }));
-      
-      setExpenses(convertedExpenses);
-    } catch (error) {
-      console.error('Error loading expenses:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const addExpense = async (expenseData: any) => {
-    try {
-      if (!user) throw new Error('No user logged in');
-
       const expensesCollection = createCollection(user.id, 'expenses');
       const { insertedId, error } = await expensesCollection.insertOne({
         ...expenseData,
@@ -154,11 +186,42 @@ export function useExpenses() {
     return documents;
   };
 
+  // MongoDB-style query methods
+  const getExpensesByCategory = async (category: string) => {
+    if (!user) return [];
+    
+    const expensesCollection = createCollection(user.id, 'expenses');
+    const { documents } = await expensesCollection.find({ category });
+    return documents;
+  };
+
+  const getExpensesAnalytics = async () => {
+    if (!user) return null;
+    
+    const expensesCollection = createCollection(user.id, 'expenses');
+    const { result } = await expensesCollection.aggregate([
+      { $group: { _id: '$category', totalAmount: { $sum: '$amount' }, count: { $sum: 1 } } },
+      { $sort: { totalAmount: -1 } }
+    ]);
+    return result;
+  };
+
+  const getTaxDeductibleExpenses = async () => {
+    if (!user) return [];
+    
+    const expensesCollection = createCollection(user.id, 'expenses');
+    const { documents } = await expensesCollection.find({ tax_deductible: true });
+    return documents;
+  };
+
   return {
     expenses,
     loading,
     addExpense,
     getTotalExpenses,
+    getExpensesByCategory,
+    getExpensesAnalytics,
+    getTaxDeductibleExpenses,
     getExpensesByCategory,
     getExpensesAnalytics,
     getTaxDeductibleExpenses,

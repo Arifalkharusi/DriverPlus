@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from './useAuth';
+import { createCollection } from '@/utils/mongoHelpers';
 import { createCollection } from '@/utils/mongoHelpers';
 
 interface Expense {
@@ -24,7 +25,7 @@ interface Expense {
   notes?: string;
 }
 
-export function useExpenses() {
+export function useExpenses(useDocumentStorage = false) {
   const { user } = useAuth();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,129 +40,135 @@ export function useExpenses() {
     try {
       if (!user) return;
 
-      const expensesCollection = createCollection(user.id, 'expenses');
-      const { documents, error } = await expensesCollection.find({}, { 
-        sort: { date: -1 } 
-      });
-      
-      if (error) throw error;
-      
-      // Convert documents to expenses format
-      const convertedExpenses = documents.map(doc => ({
+      if (useDocumentStorage) {
+        // MongoDB-style document storage
+        const expensesCollection = createCollection(user.id, 'expenses');
+        const { documents, error } = await expensesCollection.find({}, { 
+          sort: { date: -1 } 
+        });
+        
+        if (error) throw error;
+        
+        // Convert documents to expenses format
+        const convertedExpenses = documents.map(doc => ({
+          id: doc._id,
+          user_id: user.id,
+          category: doc.category,
+          amount: doc.amount,
+          description: doc.description,
+          date: doc.date,
+          receipt_url: doc.receipt_url,
+          created_at: doc.created_at || new Date().toISOString(),
+        }));
+        
+        setExpenses(convertedExpenses);
+      } else {
+        // Traditional SQL approach
+        const { data, error } = await supabase
+          .from('expenses')
+          .select('*')
+      if (useDocumentStorage) {
+        // MongoDB-style document storage
         id: doc._id,
-        category: doc.category,
-        amount: doc.amount,
-        description: doc.description,
-        date: doc.date,
-        receipt_url: doc.receipt_url,
-        created_at: doc.created_at || new Date().toISOString(),
-        location: doc.location,
-        tags: doc.tags,
-        mileage: doc.mileage,
-        vendor: doc.vendor,
-        payment_method: doc.payment_method,
-        tax_deductible: doc.tax_deductible,
-        notes: doc.notes,
-      }));
-      
-      setExpenses(convertedExpenses);
-    } catch (error) {
-      console.error('Error loading expenses:', error);
-    } finally {
-      setLoading(false);
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await refreshTargets();
+    setRefreshing(false);
+  };
+
+  const handleSetTargets = async (targetData: any) => {
+    const { error } = await setWeeklyTargets(targetData);
+    if (error) {
+      Alert.alert('Error', 'Failed to set targets');
+    } else {
+      setShowSetModal(false);
+      Alert.alert('Success', 'Targets set successfully');
     }
   };
 
-  const addExpense = async (expenseData: any) => {
-    try {
-      if (!user) throw new Error('No user logged in');
+  return (
+    <View className={`flex-1 ${isDark ? 'bg-slate-900' : 'bg-gray-50'}`}>
+      <LinearGradient
+        colors={isDark ? ['#1e293b', '#0f172a'] : ['#10b981', '#059669']}
+        className="pt-16 px-5 pb-6"
+      >
+        <View className="flex-row justify-between items-center mb-6">
+          <Text className="text-white text-3xl font-bold">Targets</Text>
+          <TouchableOpacity 
+            className="bg-white/20 rounded-full p-3"
+            onPress={() => setShowSetModal(true)}
+          >
+            <Plus color="#ffffff" size={24} />
+          </TouchableOpacity>
+        </View>
 
-      const expensesCollection = createCollection(user.id, 'expenses');
-      const { insertedId, error } = await expensesCollection.insertOne({
-        ...expenseData,
-        created_at: new Date().toISOString(),
-        // Add flexible metadata
-        metadata: {
-          source: 'manual_entry',
-          location: null, // Could store GPS coordinates
-          tags: [], // Custom tags
-          tax_deductible: true, // Default for business expenses
+        <View className="flex-row justify-between">
+          <View className="flex-1 mr-2">
+            <Text className="text-green-200 text-sm mb-1">Today</Text>
+            <Text className="text-white text-xl font-bold">{formatCurrency(todayEarnings)}</Text>
+          </View>
+          <View className="flex-1 mx-2">
+            <Text className="text-green-200 text-sm mb-1">This Week</Text>
+            <Text className="text-white text-xl font-bold">{formatCurrency(weeklyEarnings)}</Text>
+          </View>
+          <View className="flex-1 ml-2">
+            <Text className="text-green-200 text-sm mb-1">Target</Text>
+            <Text className="text-white text-xl font-bold">
+              {formatCurrency(currentTargets?.earnings_target || 800)}
+            </Text>
+          </View>
+        </View>
+      </LinearGradient>
+
+      <ScrollView 
+        className="flex-1 px-5 -mt-2"
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
-      });
-      
-      if (error) throw error;
-      
-      const newExpense = {
-        id: insertedId,
-        ...expenseData,
-        created_at: new Date().toISOString(),
-      };
-      
-      setExpenses(prev => [newExpense, ...prev]);
-      return { data: newExpense, error: null };
-    } catch (error) {
-      return { data: null, error };
-    }
-  };
+      >
+        {currentTargets ? (
+          <>
+            {/* Weekly Progress Overview */}
+            <View className={`${isDark ? 'bg-slate-800' : 'bg-white'} rounded-2xl p-5 mb-4 mt-4 shadow-sm`}>
+              <Text className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'} mb-4`}>
+                Weekly Progress
+              </Text>
+              <WeeklyProgress 
+                targets={{
+                  earnings: { target: currentTargets.earnings_target, current: currentProgress.earnings },
+                  hours: { target: currentTargets.hours_target, current: currentProgress.hours },
+                  trips: { target: currentTargets.trips_target, current: currentProgress.trips },
+                }}
+              />
+            </View>
 
-  const getTotalExpenses = (period: 'today' | 'week' | 'month' = 'month') => {
-    let filteredExpenses: Expense[];
-    
-    switch (period) {
-      case 'today':
-        const today = new Date().toISOString().split('T')[0];
-        filteredExpenses = expenses.filter(e => e.date === today);
-        break;
-      case 'week':
-        const weekAgo = new Date();
-        weekAgo.setDate(weekAgo.getDate() - 7);
-        filteredExpenses = expenses.filter(e => new Date(e.date) >= weekAgo);
-        break;
-      default:
-        const monthAgo = new Date();
-        monthAgo.setMonth(monthAgo.getMonth() - 1);
-        filteredExpenses = expenses.filter(e => new Date(e.date) >= monthAgo);
-    }
-    
-    return filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0);
-  };
+            {/* Individual Target Cards */}
+            <View className="flex-row justify-between mb-4">
+              <TargetCard
+                title="Earnings"
+                target={currentTargets.earnings_target}
+                current={currentProgress.earnings}
+                unit="£"
+                icon={<TrendingUp color="#10b981" size={20} />}
+                color="#10b981"
+              />
+              <TargetCard
+                title="Hours"
+                target={currentTargets.hours_target}
+                current={currentProgress.hours}
+                unit=""
+                icon={<Clock color="#f59e0b" size={20} />}
+                color="#f59e0b"
+              />
+            </View>
 
-  // MongoDB-style query methods
-  const getExpensesByCategory = async (category: string) => {
-    if (!user) return [];
-    
-    const expensesCollection = createCollection(user.id, 'expenses');
-    const { documents } = await expensesCollection.find({ category });
-    return documents;
-  };
-
-  const getExpensesAnalytics = async () => {
-    if (!user) return null;
-    
-    const expensesCollection = createCollection(user.id, 'expenses');
-    const { result } = await expensesCollection.aggregate([
-      { $group: { _id: '$category', totalAmount: { $sum: '$amount' }, count: { $sum: 1 } } },
-      { $sort: { totalAmount: -1 } }
-    ]);
-    return result;
-  };
-
-  const getTaxDeductibleExpenses = async () => {
-    if (!user) return [];
-    
-    const expensesCollection = createCollection(user.id, 'expenses');
-    const { documents } = await expensesCollection.find({ tax_deductible: true });
-    return documents;
-  };
-
-  return {
-    expenses,
-    loading,
-    addExpense,
-    getTotalExpenses,
-    getExpensesByCategory,
-    getExpensesAnalytics,
-    getTaxDeductibleExpenses,
-    refreshExpenses: loadExpenses,
-  };
-}
+            <TargetCard
+              title="Trips"
+              target={currentTargets.trips_target}
+              current={currentProgress.trips}
+              unit=""
+              icon={<Car color="#8b5cf6" size={20} />}
+              color="#8b5cf6"
+              fullWidth
+            />
