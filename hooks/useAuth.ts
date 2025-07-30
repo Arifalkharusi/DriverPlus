@@ -98,23 +98,6 @@ export function useExpenses(useDocumentStorage = false) {
       
       if (error) throw error;
       
-      // Convert documents to expenses format
-      const convertedExpenses = documents.map(doc => ({
-        id: doc._id,
-        category: doc.category,
-        amount: doc.amount,
-        description: doc.description,
-        date: doc.date,
-        receipt_url: doc.receipt_url,
-        created_at: doc.created_at || new Date().toISOString(),
-        location: doc.location,
-        tags: doc.tags,
-        mileage: doc.mileage,
-        vendor: doc.vendor,
-        payment_method: doc.payment_method,
-      }
-      )
-      )
       const expensesCollection = createCollection(user.id, 'expenses');
       const { insertedId, error } = await expensesCollection.insertOne({
         ...expenseData,
