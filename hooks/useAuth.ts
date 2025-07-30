@@ -28,8 +28,7 @@ export function useAuth() {
   useEffect(() => {
     isMountedRef.current = true;
     
-    // Check for existing session
-    checkSession();
+    let isInitialLoad = true;
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -43,9 +42,15 @@ export function useAuth() {
             setProfile(null);
           }
         }
-        if (isMountedRef.current) setLoading(false);
+        if (isMountedRef.current && isInitialLoad) {
+          setLoading(false);
+          isInitialLoad = false;
+        }
       }
     );
+
+    // Check for existing session
+    checkSession();
 
     return () => {
       isMountedRef.current = false;
@@ -59,10 +64,11 @@ export function useAuth() {
       if (session?.user) {
         if (isMountedRef.current) setUser(session.user as User);
         await loadProfile(session.user.id);
+      } else {
+        if (isMountedRef.current) setLoading(false);
       }
     } catch (error) {
       console.error('Error checking session:', error);
-    } finally {
       if (isMountedRef.current) setLoading(false);
     }
   };
