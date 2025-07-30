@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from './useAuth';
 import { createCollection } from '@/utils/mongoHelpers';
 
@@ -32,11 +32,17 @@ export function useTargets() {
   const { user } = useAuth();
   const [targets, setTargets] = useState<Target[]>([]);
   const [loading, setLoading] = useState(true);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
+    isMountedRef.current = true;
     if (user) {
       loadTargets();
     }
+    
+    return () => {
+      isMountedRef.current = false;
+    };
   }, [user]);
 
   const loadTargets = async () => {
@@ -63,11 +69,11 @@ export function useTargets() {
         weekly_plan: doc.weekly_plan,
       }));
       
-      setTargets(convertedTargets);
+      if (isMountedRef.current) setTargets(convertedTargets);
     } catch (error) {
       console.error('Error loading targets:', error);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) setLoading(false);
     }
   };
 

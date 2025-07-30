@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from './useAuth';
 import { createCollection } from '@/utils/mongoHelpers';
 import { supabase } from '@/utils/supabase';
@@ -29,11 +29,17 @@ export function useExpenses(useDocumentStorage = false) {
   const { user } = useAuth();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
+    isMountedRef.current = true;
     if (user) {
       loadExpenses();
     }
+    
+    return () => {
+      isMountedRef.current = false;
+    };
   }, [user]);
 
   const loadExpenses = async () => {
@@ -81,11 +87,11 @@ export function useExpenses(useDocumentStorage = false) {
         convertedExpenses = data || [];
       }
       
-      setExpenses(convertedExpenses);
+      if (isMountedRef.current) setExpenses(convertedExpenses);
     } catch (error) {
       console.error('Error loading expenses:', error);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) setLoading(false);
     }
   };
 
@@ -116,7 +122,7 @@ export function useExpenses(useDocumentStorage = false) {
           created_at: new Date().toISOString(),
         };
         
-        setExpenses(prev => [newExpense, ...prev]);
+        if (isMountedRef.current) setExpenses(prev => [newExpense, ...prev]);
         return { data: newExpense, error: null };
       } else {
         // Traditional SQL approach
@@ -132,7 +138,7 @@ export function useExpenses(useDocumentStorage = false) {
 
         if (error) throw error;
 
-        setExpenses(prev => [data, ...prev]);
+        if (isMountedRef.current) setExpenses(prev => [data, ...prev]);
         return { data, error: null };
       }
     } catch (error) {

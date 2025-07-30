@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from './useAuth';
 import { createCollection } from '@/utils/mongoHelpers';
 
@@ -25,11 +25,17 @@ export function useEarnings() {
   const { user } = useAuth();
   const [earnings, setEarnings] = useState<Earning[]>([]);
   const [loading, setLoading] = useState(true);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
+    isMountedRef.current = true;
     if (user) {
       loadEarnings();
     }
+    
+    return () => {
+      isMountedRef.current = false;
+    };
   }, [user]);
 
   const loadEarnings = async () => {
@@ -62,11 +68,11 @@ export function useEarnings() {
         bonuses: doc.bonuses,
       }));
       
-      setEarnings(convertedEarnings);
+      if (isMountedRef.current) setEarnings(convertedEarnings);
     } catch (error) {
       console.error('Error loading earnings:', error);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) setLoading(false);
     }
   };
 
@@ -94,7 +100,7 @@ export function useEarnings() {
         created_at: new Date().toISOString(),
       };
       
-      setEarnings(prev => [newEarning, ...prev]);
+      if (isMountedRef.current) setEarnings(prev => [newEarning, ...prev]);
       return { data: newEarning, error: null };
     } catch (error) {
       return { data: null, error };

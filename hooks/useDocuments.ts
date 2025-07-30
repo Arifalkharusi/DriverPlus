@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/utils/supabase';
 import { useAuth } from './useAuth';
 
@@ -15,11 +15,17 @@ export function useDocuments(collection?: string) {
   const { user } = useAuth();
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
+    isMountedRef.current = true;
     if (user) {
       loadDocuments();
     }
+    
+    return () => {
+      isMountedRef.current = false;
+    };
   }, [user, collection]);
 
   const loadDocuments = async () => {
@@ -40,11 +46,11 @@ export function useDocuments(collection?: string) {
 
       if (error) throw error;
 
-      setDocuments(data || []);
+      if (isMountedRef.current) setDocuments(data || []);
     } catch (error) {
       console.error('Error loading documents:', error);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) setLoading(false);
     }
   };
 
@@ -65,7 +71,7 @@ export function useDocuments(collection?: string) {
 
       if (error) throw error;
 
-      setDocuments(prev => [doc, ...prev]);
+      if (isMountedRef.current) setDocuments(prev => [doc, ...prev]);
       return { data: doc, error: null };
     } catch (error) {
       return { data: null, error };
@@ -84,9 +90,11 @@ export function useDocuments(collection?: string) {
 
       if (error) throw error;
 
-      setDocuments(prev => 
-        prev.map(d => d.id === id ? doc : d)
-      );
+      if (isMountedRef.current) {
+        setDocuments(prev => 
+          prev.map(d => d.id === id ? doc : d)
+        );
+      }
       return { data: doc, error: null };
     } catch (error) {
       return { data: null, error };
@@ -103,7 +111,7 @@ export function useDocuments(collection?: string) {
 
       if (error) throw error;
 
-      setDocuments(prev => prev.filter(d => d.id !== id));
+      if (isMountedRef.current) setDocuments(prev => prev.filter(d => d.id !== id));
       return { error: null };
     } catch (error) {
       return { error };

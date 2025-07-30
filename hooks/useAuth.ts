@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/utils/supabase';
 import { storeUserToken, getUserToken, removeUserToken } from '@/utils/storage';
 
@@ -23,8 +23,11 @@ export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
+    isMountedRef.current = true;
+    
     // Check for existing session
     checkSession();
 
@@ -32,30 +35,35 @@ export function useAuth() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (session?.user) {
-          setUser(session.user as User);
+          if (isMountedRef.current) setUser(session.user as User);
           await loadProfile(session.user.id);
         } else {
-          setUser(null);
-          setProfile(null);
+          if (isMountedRef.current) {
+            setUser(null);
+            setProfile(null);
+          }
         }
-        setLoading(false);
+        if (isMountedRef.current) setLoading(false);
       }
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      isMountedRef.current = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const checkSession = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
-        setUser(session.user as User);
+        if (isMountedRef.current) setUser(session.user as User);
         await loadProfile(session.user.id);
       }
     } catch (error) {
       console.error('Error checking session:', error);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) setLoading(false);
     }
   };
 
@@ -71,7 +79,7 @@ export function useAuth() {
         throw error;
       }
 
-      setProfile(data);
+      if (isMountedRef.current) setProfile(data);
     } catch (error) {
       console.error('Error loading profile:', error);
     }
@@ -137,8 +145,10 @@ export function useAuth() {
       if (error) throw error;
 
       await removeUserToken();
-      setUser(null);
-      setProfile(null);
+      if (isMountedRef.current) {
+        setUser(null);
+        setProfile(null);
+      }
 
       return { error: null };
     } catch (error) {
@@ -159,7 +169,7 @@ export function useAuth() {
 
       if (error) throw error;
 
-      setProfile(data);
+      if (isMountedRef.current) setProfile(data);
       return { data, error: null };
     } catch (error) {
       return { data: null, error };
