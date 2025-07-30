@@ -1,9 +1,8 @@
 import { Tabs } from 'expo-router';
 import { useTheme } from '@/hooks/useTheme';
 import {
-  Chrome as Home,
+  Home,
   TrendingUp,
-  Receipt,
   Target,
   FileText,
   Plane,
@@ -28,74 +27,49 @@ export default function TabsLayout() {
         tabBarActiveTintColor: '#2563eb',
         tabBarInactiveTintColor: isDark ? '#64748b' : '#6b7280',
         tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: '600',
-          marginTop: 4,
+          fontSize: 0,
+          height: 0,
+        },
+        tabBarIconStyle: {
+          marginTop: 8,
         },
       }}
     >
       <Tabs.Screen
         name="dashboard"
         options={{
-          title: 'Dashboard',
+          title: '',
           tabBarIcon: ({ color, size }) => <Home color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="earnings"
-        options={{
-          title: 'Earnings',
-          tabBarIcon: ({ color, size }) => (
-            <TrendingUp color={color} size={size} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="expenses"
-        options={{
-          title: 'Expenses',
-          tabBarIcon: ({ color, size }) => (
-            <Receipt color={color} size={size} />
-          ),
         }}
       />
       <Tabs.Screen
         name="targets"
         options={{
-          title: 'Targets',
+          title: '',
           tabBarIcon: ({ color, size }) => <Target color={color} size={size} />,
         }}
       />
       <Tabs.Screen
         name="transport"
         options={{
-          title: 'Transport',
+          title: '',
           tabBarIcon: ({ color, size }) => <Plane color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'Profile',
-          tabBarIcon: ({ color, size }) => <User color={color} size={size} />,
         }}
       />
       <Tabs.Screen
         name="reports"
         options={{
-          title: 'Reports',
+          title: '',
           tabBarIcon: ({ color, size }) => (
             <FileText color={color} size={size} />
           ),
         }}
       />
       <Tabs.Screen
-        name="insights"
+        name="profile"
         options={{
-          title: 'Insights',
-          tabBarIcon: ({ color, size }) => (
-            <TrendingUp color={color} size={size} />
-          ),
+          title: '',
+          tabBarIcon: ({ color, size }) => <User color={color} size={size} />,
         }}
       />
     </Tabs>

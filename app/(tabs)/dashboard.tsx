@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, RefreshControl, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { TrendingUp, Clock, Target, Car, Zap, Receipt, Settings } from 'lucide-react-native';
+import { TrendingUp, Clock, Target, Car, Zap, Receipt, Settings, Plus } from 'lucide-react-native';
 import { useAuth } from '@/hooks/useAuth';
 import { useEarnings } from '@/hooks/useEarnings';
 import { useExpenses } from '@/hooks/useExpenses';
@@ -9,13 +9,18 @@ import { useTheme } from '@/hooks/useTheme';
 import { DashboardCard } from '@/components/DashboardCard';
 import { ProgressChart } from '@/components/ProgressChart';
 import { EarningsChart } from '@/components/EarningsChart';
+import { AddEarningModal } from '@/components/AddEarningModal';
+import { AddExpenseModal } from '@/components/AddExpenseModal';
+import { formatCurrency, formatDate } from '@/utils/formatters';
 
 export default function DashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
+  const [showEarningModal, setShowEarningModal] = useState(false);
+  const [showExpenseModal, setShowExpenseModal] = useState(false);
   
   const { profile } = useAuth();
-  const { getTodayEarnings, getWeeklyEarnings, getHourlyRate, refreshEarnings } = useEarnings();
-  const { getTotalExpenses, refreshExpenses } = useExpenses();
+  const { earnings, getTodayEarnings, getWeeklyEarnings, getHourlyRate, addEarning, refreshEarnings } = useEarnings();
+  const { expenses, getTotalExpenses, addExpense, refreshExpenses } = useExpenses();
   const { isDark } = useTheme();
 
   const todayEarnings = getTodayEarnings();
@@ -29,6 +34,26 @@ export default function DashboardScreen() {
     setRefreshing(true);
     await Promise.all([refreshEarnings(), refreshExpenses()]);
     setRefreshing(false);
+  };
+
+  const handleAddEarning = async (earningData: any) => {
+    const { error } = await addEarning(earningData);
+    if (error) {
+      Alert.alert('Error', 'Failed to add earning');
+    } else {
+      setShowEarningModal(false);
+      Alert.alert('Success', 'Earning added successfully');
+    }
+  };
+
+  const handleAddExpense = async (expenseData: any) => {
+    const { error } = await addExpense(expenseData);
+    if (error) {
+      Alert.alert('Error', 'Failed to add expense');
+    } else {
+      setShowExpenseModal(false);
+      Alert.alert('Success', 'Expense added successfully');
+    }
   };
 
   const getGreeting = () => {
@@ -79,6 +104,24 @@ export default function DashboardScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
+        {/* Quick Actions */}
+        <View className="flex-row justify-between mb-4">
+          <TouchableOpacity 
+            className="flex-1 bg-success-600 rounded-xl p-4 mr-2 flex-row items-center justify-center"
+            onPress={() => setShowEarningModal(true)}
+          >
+            <Plus color="#ffffff" size={20} />
+            <Text className="text-white font-semibold ml-2">Add Earning</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            className="flex-1 bg-error-600 rounded-xl p-4 ml-2 flex-row items-center justify-center"
+            onPress={() => setShowExpenseModal(true)}
+          >
+            <Plus color="#ffffff" size={20} />
+            <Text className="text-white font-semibold ml-2">Add Expense</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Quick Stats */}
         <View className="flex-row justify-between mb-4">
           <DashboardCard
@@ -116,6 +159,84 @@ export default function DashboardScreen() {
             color="#ef4444"
             isDark={isDark}
           />
+        </View>
+
+        {/* Recent Earnings */}
+        <View className={`${isDark ? 'bg-slate-800' : 'bg-white'} rounded-2xl p-5 mb-4 shadow-sm`}>
+          <View className="flex-row justify-between items-center mb-4">
+            <Text className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+              Recent Earnings
+            </Text>
+            <TouchableOpacity onPress={() => setShowEarningModal(true)}>
+              <Plus color="#2563eb" size={20} />
+            </TouchableOpacity>
+          </View>
+          
+          {earnings.slice(0, 3).map((earning) => (
+            <View
+              key={earning.id}
+              className={`${isDark ? 'bg-slate-700' : 'bg-gray-50'} rounded-xl p-3 mb-2`}
+            >
+              <View className="flex-row items-center justify-between">
+                <View className="flex-1">
+                  <Text className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                    {earning.platform.charAt(0).toUpperCase() + earning.platform.slice(1)}
+                  </Text>
+                  <Text className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                    {formatDate(earning.date)} • {earning.trips_count} trips
+                  </Text>
+                </View>
+                <Text className="text-sm font-bold text-success-600">
+                  {formatCurrency(earning.net_amount)}
+                </Text>
+              </View>
+            </View>
+          ))}
+          
+          {earnings.length === 0 && (
+            <Text className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'} text-center py-4`}>
+              No earnings recorded yet
+            </Text>
+          )}
+        </View>
+
+        {/* Recent Expenses */}
+        <View className={`${isDark ? 'bg-slate-800' : 'bg-white'} rounded-2xl p-5 mb-4 shadow-sm`}>
+          <View className="flex-row justify-between items-center mb-4">
+            <Text className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+              Recent Expenses
+            </Text>
+            <TouchableOpacity onPress={() => setShowExpenseModal(true)}>
+              <Plus color="#ef4444" size={20} />
+            </TouchableOpacity>
+          </View>
+          
+          {expenses.slice(0, 3).map((expense) => (
+            <View
+              key={expense.id}
+              className={`${isDark ? 'bg-slate-700' : 'bg-gray-50'} rounded-xl p-3 mb-2`}
+            >
+              <View className="flex-row items-center justify-between">
+                <View className="flex-1">
+                  <Text className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                    {expense.description}
+                  </Text>
+                  <Text className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                    {expense.category} • {formatDate(expense.date)}
+                  </Text>
+                </View>
+                <Text className="text-sm font-bold text-error-600">
+                  -{formatCurrency(expense.amount)}
+                </Text>
+              </View>
+            </View>
+          ))}
+          
+          {expenses.length === 0 && (
+            <Text className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'} text-center py-4`}>
+              No expenses recorded yet
+            </Text>
+          )}
         </View>
 
         {/* Weekly Progress Chart */}
@@ -199,6 +320,20 @@ export default function DashboardScreen() {
           </View>
         </View>
       </ScrollView>
+
+      <AddEarningModal
+        visible={showEarningModal}
+        onClose={() => setShowEarningModal(false)}
+        onAdd={handleAddEarning}
+        isDark={isDark}
+      />
+
+      <AddExpenseModal
+        visible={showExpenseModal}
+        onClose={() => setShowExpenseModal(false)}
+        onAdd={handleAddExpense}
+        isDark={isDark}
+      />
     </View>
   );
 }
